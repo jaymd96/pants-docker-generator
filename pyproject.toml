@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pants-docker-generator"
+name = "jaymd96-pants-docker-generator"
 dynamic = ["version"]
 description = "Pure Python Dockerfile generation for Pants plugins"
 readme = "README.md"
