@@ -1,0 +1,6 @@
+{
+  "name": "docker-generator",
+  "version": "0.2.0",
+  "description": "General-purpose Dockerfile generation library with directives, builder, and presets",
+  "skills": "./skills/"
+}
