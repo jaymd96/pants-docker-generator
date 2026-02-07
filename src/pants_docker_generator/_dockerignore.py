@@ -1,6 +1,7 @@
 """Dockerignore file generation."""
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -10,7 +11,7 @@ class DockerignoreConfig:
     ignore_all: bool = True
     allow_patterns: tuple[str, ...] = ()
     deny_patterns: tuple[str, ...] = ()
-    comment: str | None = None
+    comment: Optional[str] = None
 
     def render(self) -> str:
         lines: list[str] = []
@@ -29,7 +30,7 @@ class DockerignoreConfig:
 def generate_dockerignore(
     *,
     allow: tuple[str, ...] = (),
-    comment: str | None = None,
+    comment: Optional[str] = None,
 ) -> str:
     """Generate a .dockerignore that blocks everything except ``allow`` patterns."""
     config = DockerignoreConfig(

@@ -1,6 +1,7 @@
 """Multi-stage build support."""
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 from pants_docker_generator._directives import Directive, From
 
@@ -13,7 +14,7 @@ class Stage:
     directives: tuple[Directive, ...] = ()
 
     @property
-    def alias(self) -> str | None:
+    def alias(self) -> Optional[str]:
         return self.from_directive.alias
 
     def render(self) -> str:

@@ -5,6 +5,7 @@ to its string representation via ``render()``.
 """
 
 from dataclasses import dataclass, field
+from typing import Optional, Union
 
 
 @dataclass(frozen=True)
@@ -30,8 +31,8 @@ class From:
     """FROM instruction."""
 
     image: str
-    alias: str | None = None
-    platform: str | None = None
+    alias: Optional[str] = None
+    platform: Optional[str] = None
 
     def render(self) -> str:
         parts = ["FROM"]
@@ -59,8 +60,8 @@ class Copy:
 
     src: str
     dst: str
-    from_stage: str | None = None
-    chown: str | None = None
+    from_stage: Optional[str] = None
+    chown: Optional[str] = None
 
     def render(self) -> str:
         parts = ["COPY"]
@@ -79,7 +80,7 @@ class Add:
 
     src: str
     dst: str
-    chown: str | None = None
+    chown: Optional[str] = None
 
     def render(self) -> str:
         parts = ["ADD"]
@@ -105,7 +106,7 @@ class User:
     """USER instruction."""
 
     user: str
-    group: str | None = None
+    group: Optional[str] = None
 
     def render(self) -> str:
         if self.group:
@@ -118,7 +119,7 @@ class Expose:
     """EXPOSE instruction."""
 
     port: int
-    protocol: str | None = None
+    protocol: Optional[str] = None
 
     def render(self) -> str:
         if self.protocol:
@@ -153,7 +154,7 @@ class Arg:
     """ARG instruction."""
 
     name: str
-    default: str | None = None
+    default: Optional[str] = None
 
     def render(self) -> str:
         if self.default is not None:
@@ -245,8 +246,8 @@ class HealthCheckNone:
 
 
 # Union type for all directives
-Directive = (
-    Comment | BlankLine | From | Run | Copy | Add | Workdir | User |
-    Expose | Entrypoint | Cmd | Arg | Env | Label | Volume | Shell |
-    HealthCheck | HealthCheckNone
-)
+Directive = Union[
+    Comment, BlankLine, From, Run, Copy, Add, Workdir, User,
+    Expose, Entrypoint, Cmd, Arg, Env, Label, Volume, Shell,
+    HealthCheck, HealthCheckNone,
+]

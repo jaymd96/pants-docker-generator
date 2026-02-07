@@ -1,6 +1,7 @@
 """Dockerfile and DockerfileBuilder - the core assembly API."""
 
 from dataclasses import dataclass, field
+from typing import Dict, Optional
 
 from pants_docker_generator._directives import (
     Add,
@@ -66,7 +67,7 @@ class DockerfileBuilder:
 
     def __init__(self) -> None:
         self._stages: list[Stage] = []
-        self._current_from: From | None = None
+        self._current_from: Optional[From] = None
         self._current_directives: list[Directive] = []
 
     def _flush_stage(self) -> None:
@@ -83,8 +84,8 @@ class DockerfileBuilder:
         self,
         image: str,
         *,
-        alias: str | None = None,
-        platform: str | None = None,
+        alias: Optional[str] = None,
+        platform: Optional[str] = None,
     ) -> "DockerfileBuilder":
         """Start a new stage with FROM."""
         self._flush_stage()
@@ -100,13 +101,13 @@ class DockerfileBuilder:
         src: str,
         dst: str,
         *,
-        from_stage: str | None = None,
-        chown: str | None = None,
+        from_stage: Optional[str] = None,
+        chown: Optional[str] = None,
     ) -> "DockerfileBuilder":
         self._current_directives.append(Copy(src=src, dst=dst, from_stage=from_stage, chown=chown))
         return self
 
-    def add(self, src: str, dst: str, *, chown: str | None = None) -> "DockerfileBuilder":
+    def add(self, src: str, dst: str, *, chown: Optional[str] = None) -> "DockerfileBuilder":
         self._current_directives.append(Add(src=src, dst=dst, chown=chown))
         return self
 
@@ -114,11 +115,11 @@ class DockerfileBuilder:
         self._current_directives.append(Workdir(path=path))
         return self
 
-    def user(self, user: str, group: str | None = None) -> "DockerfileBuilder":
+    def user(self, user: str, group: Optional[str] = None) -> "DockerfileBuilder":
         self._current_directives.append(User(user=user, group=group))
         return self
 
-    def expose(self, port: int, protocol: str | None = None) -> "DockerfileBuilder":
+    def expose(self, port: int, protocol: Optional[str] = None) -> "DockerfileBuilder":
         self._current_directives.append(Expose(port=port, protocol=protocol))
         return self
 
@@ -130,7 +131,7 @@ class DockerfileBuilder:
         self._current_directives.append(Cmd(args=args))
         return self
 
-    def arg(self, name: str, default: str | None = None) -> "DockerfileBuilder":
+    def arg(self, name: str, default: Optional[str] = None) -> "DockerfileBuilder":
         self._current_directives.append(Arg(name=name, default=default))
         return self
 
@@ -138,7 +139,7 @@ class DockerfileBuilder:
         self._current_directives.append(Env(key=key, value=value))
         return self
 
-    def label(self, labels: dict[str, str]) -> "DockerfileBuilder":
+    def label(self, labels: Dict[str, str]) -> "DockerfileBuilder":
         self._current_directives.append(Label(labels=labels))
         return self
 

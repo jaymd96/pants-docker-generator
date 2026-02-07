@@ -1,20 +1,22 @@
 """OCI image label helpers."""
 
+from typing import Dict, Optional
+
 from pants_docker_generator._directives import Label
 
 
 def oci_labels(
     *,
-    title: str | None = None,
-    version: str | None = None,
-    vendor: str | None = None,
-    description: str | None = None,
-    url: str | None = None,
-    source: str | None = None,
-    licenses: str | None = None,
-    revision: str | None = None,
-    created: str | None = None,
-    extra: dict[str, str] | None = None,
+    title: Optional[str] = None,
+    version: Optional[str] = None,
+    vendor: Optional[str] = None,
+    description: Optional[str] = None,
+    url: Optional[str] = None,
+    source: Optional[str] = None,
+    licenses: Optional[str] = None,
+    revision: Optional[str] = None,
+    created: Optional[str] = None,
+    extra: Optional[Dict[str, str]] = None,
 ) -> Label:
     """Build a Label directive with standard OCI annotation keys.
 

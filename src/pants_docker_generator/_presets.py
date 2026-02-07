@@ -3,6 +3,8 @@
 These reproduce well-known Dockerfile layouts in a single function call.
 """
 
+from typing import Dict, Optional
+
 from pants_docker_generator._directives import (
     Add,
     BlankLine,
@@ -29,13 +31,13 @@ def sls_dockerfile(
     tarball_name: str,
     install_path: str = "/opt/services",
     product_type: str = "helm.v1",
-    health_check_interval: int | None = None,
-    health_check_timeout: int | None = None,
-    health_check_start_period: int | None = None,
-    health_check_retries: int | None = None,
+    health_check_interval: Optional[int] = None,
+    health_check_timeout: Optional[int] = None,
+    health_check_start_period: Optional[int] = None,
+    health_check_retries: Optional[int] = None,
     use_hook_init: bool = False,
     expose_ports: tuple[int, ...] = (),
-    labels: dict[str, str] | None = None,
+    labels: Optional[Dict[str, str]] = None,
 ) -> Dockerfile:
     """Generate a Dockerfile for an SLS distribution.
 
