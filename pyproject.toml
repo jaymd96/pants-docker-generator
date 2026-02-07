@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "jaymd96-pants-docker-generator"
 dynamic = ["version"]
-description = "Pure Python Dockerfile generation for Pants plugins"
+description = "General-purpose Dockerfile generation library"
 readme = "README.md"
 requires-python = ">=3.11,<4"
 license = "Apache-2.0"

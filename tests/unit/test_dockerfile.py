@@ -1,357 +1,163 @@
-"""Tests for Dockerfile generation (pure functions, no Pants engine)."""
-
-from __future__ import annotations
+"""Tests for Dockerfile and DockerfileBuilder."""
 
 import pytest
 
-from pants_docker_generator._dockerfile import (
-    DockerConfig,
-    HealthCheckConfig,
-    generate_dockerfile,
-    generate_dockerignore,
-)
+from pants_docker_generator._dockerfile import Dockerfile, DockerfileBuilder
+from pants_docker_generator._directives import From, Run, Workdir, Copy, BlankLine
+from pants_docker_generator._stage import Stage
 
 
-# =============================================================================
-# Helpers
-# =============================================================================
-
-
-def _make_config(**overrides) -> DockerConfig:
-    """Create a DockerConfig with sensible defaults."""
-    defaults = dict(
-        base_image="python:3.11-slim",
-        product_name="my-service",
-        product_version="1.0.0",
-        product_group="com.example",
-        dist_name="my-service-1.0.0",
-        tarball_name="my-service-1.0.0.sls.tgz",
-    )
-    defaults.update(overrides)
-    return DockerConfig(**defaults)
-
-
-# =============================================================================
-# DockerConfig tests
-# =============================================================================
-
-
-class TestDockerConfig:
-    """Test DockerConfig dataclass."""
-
-    def test_image_tag_with_registry(self):
-        config = _make_config(registry="registry.example.io")
-        assert config.image_tag == "registry.example.io/my-service:1.0.0"
-
-    def test_image_tag_without_registry(self):
-        config = _make_config(registry="")
-        assert config.image_tag == "my-service:1.0.0"
-
-    def test_workdir(self):
-        config = _make_config(install_path="/opt/services")
-        assert config.workdir == "/opt/services/my-service-1.0.0"
-
-    def test_custom_install_path(self):
-        config = _make_config(install_path="/app")
-        assert config.workdir == "/app/my-service-1.0.0"
-
-    def test_frozen(self):
-        config = _make_config()
-        with pytest.raises(AttributeError):
-            config.base_image = "other"  # type: ignore[misc]
-
-
-# =============================================================================
-# HealthCheckConfig tests
-# =============================================================================
-
-
-class TestHealthCheckConfig:
-    """Test HealthCheckConfig defaults."""
-
-    def test_defaults(self):
-        hc = HealthCheckConfig()
-        assert hc.interval_seconds == 10
-        assert hc.timeout_seconds == 5
-        assert hc.start_period_seconds == 30
-        assert hc.retries == 3
-
-    def test_custom_values(self):
-        hc = HealthCheckConfig(
-            interval_seconds=30,
-            timeout_seconds=10,
-            start_period_seconds=60,
-            retries=5,
+class TestDockerfile:
+    def test_single_stage_render(self):
+        stage = Stage(
+            from_directive=From(image="python:3.11"),
+            directives=(Run(command="echo hello"),),
         )
-        assert hc.interval_seconds == 30
-        assert hc.retries == 5
+        df = Dockerfile(stages=(stage,))
+        result = df.render()
+        assert "FROM python:3.11" in result
+        assert "RUN echo hello" in result
+        assert result.endswith("\n")
+
+    def test_multi_stage_render(self):
+        s1 = Stage(from_directive=From(image="python:3.11", alias="builder"), directives=())
+        s2 = Stage(from_directive=From(image="python:3.11-slim"), directives=())
+        df = Dockerfile(stages=(s1, s2))
+        result = df.render()
+        assert "FROM python:3.11 AS builder" in result
+        assert "FROM python:3.11-slim" in result
+
+    def test_str(self):
+        stage = Stage(from_directive=From(image="alpine"), directives=())
+        df = Dockerfile(stages=(stage,))
+        assert str(df) == df.render()
 
 
-# =============================================================================
-# Dockerfile generation tests
-# =============================================================================
-
-
-class TestGenerateDockerfileBasic:
-    """Test basic Dockerfile structure."""
-
-    def test_starts_with_from(self):
-        config = _make_config()
-        dockerfile = generate_dockerfile(config)
-        assert dockerfile.startswith("FROM python:3.11-slim\n")
-
-    def test_custom_base_image(self):
-        config = _make_config(base_image="ubuntu:22.04")
-        dockerfile = generate_dockerfile(config)
-        assert "FROM ubuntu:22.04" in dockerfile
-
-    def test_contains_add_tarball(self):
-        config = _make_config()
-        dockerfile = generate_dockerfile(config)
-        assert "ADD my-service-1.0.0.sls.tgz /opt/services/" in dockerfile
-
-    def test_contains_workdir(self):
-        config = _make_config()
-        dockerfile = generate_dockerfile(config)
-        assert "WORKDIR /opt/services/my-service-1.0.0" in dockerfile
-
-    def test_custom_install_path(self):
-        config = _make_config(install_path="/app")
-        dockerfile = generate_dockerfile(config)
-        assert "ADD my-service-1.0.0.sls.tgz /app/" in dockerfile
-        assert "WORKDIR /app/my-service-1.0.0" in dockerfile
-
-    def test_creates_runtime_dirs(self):
-        config = _make_config()
-        dockerfile = generate_dockerfile(config)
-        assert "RUN mkdir -p var/data/tmp var/log var/run var/conf var/state" in dockerfile
-
-    def test_default_entrypoint(self):
-        config = _make_config()
-        dockerfile = generate_dockerfile(config)
-        assert 'ENTRYPOINT ["service/bin/init.sh", "start"]' in dockerfile
-
-
-# =============================================================================
-# OCI Labels
-# =============================================================================
-
-
-class TestDockerfileLabels:
-    """Test OCI label generation."""
-
-    def test_contains_standard_labels(self):
-        config = _make_config()
-        dockerfile = generate_dockerfile(config)
-        assert 'org.opencontainers.image.title="my-service"' in dockerfile
-        assert 'org.opencontainers.image.version="1.0.0"' in dockerfile
-        assert 'org.opencontainers.image.vendor="com.example"' in dockerfile
-        assert 'com.palantir.sls.product-type="helm.v1"' in dockerfile
-
-    def test_custom_product_type(self):
-        config = _make_config(product_type="service.v1")
-        dockerfile = generate_dockerfile(config)
-        assert 'com.palantir.sls.product-type="service.v1"' in dockerfile
-
-    def test_extra_labels(self):
-        config = _make_config(labels={"team": "platform", "env": "prod"})
-        dockerfile = generate_dockerfile(config)
-        assert 'team="platform"' in dockerfile
-        assert 'env="prod"' in dockerfile
-
-
-# =============================================================================
-# Health Check
-# =============================================================================
-
-
-class TestDockerfileHealthCheck:
-    """Test HEALTHCHECK directive generation."""
-
-    def test_no_healthcheck_by_default(self):
-        config = _make_config(health_check=None)
-        dockerfile = generate_dockerfile(config)
-        assert "HEALTHCHECK" not in dockerfile
-
-    def test_healthcheck_with_defaults(self):
-        config = _make_config(health_check=HealthCheckConfig())
-        dockerfile = generate_dockerfile(config)
-        assert "HEALTHCHECK" in dockerfile
-        assert "--interval=10s" in dockerfile
-        assert "--timeout=5s" in dockerfile
-        assert "--start-period=30s" in dockerfile
-        assert "--retries=3" in dockerfile
-        assert "service/monitoring/bin/check.sh || exit 1" in dockerfile
-
-    def test_custom_healthcheck(self):
-        hc = HealthCheckConfig(
-            interval_seconds=30,
-            timeout_seconds=10,
-            start_period_seconds=60,
-            retries=5,
+class TestDockerfileBuilder:
+    def test_simple_build(self):
+        df = (
+            DockerfileBuilder()
+            .from_("python:3.11-slim")
+            .workdir("/app")
+            .copy("requirements.txt", ".")
+            .run("pip install -r requirements.txt")
+            .copy(".", ".")
+            .cmd("python", "app.py")
+            .build()
         )
-        config = _make_config(health_check=hc)
-        dockerfile = generate_dockerfile(config)
-        assert "--interval=30s" in dockerfile
-        assert "--timeout=10s" in dockerfile
-        assert "--start-period=60s" in dockerfile
-        assert "--retries=5" in dockerfile
+        result = df.render()
+        assert "FROM python:3.11-slim" in result
+        assert "WORKDIR /app" in result
+        assert "COPY requirements.txt ." in result
+        assert "RUN pip install -r requirements.txt" in result
+        assert "COPY . ." in result
+        assert 'CMD ["python", "app.py"]' in result
 
-
-# =============================================================================
-# Hook Init System
-# =============================================================================
-
-
-class TestDockerfileHookInit:
-    """Test hook init system integration."""
-
-    def test_no_hooks_by_default(self):
-        config = _make_config(use_hook_init=False)
-        dockerfile = generate_dockerfile(config)
-        assert "entrypoint.sh" not in dockerfile
-        assert "hooks.sh" not in dockerfile
-
-    def test_hook_init_copies_files(self):
-        config = _make_config(use_hook_init=True)
-        dockerfile = generate_dockerfile(config)
-        assert "COPY hooks/entrypoint.sh service/bin/entrypoint.sh" in dockerfile
-        assert "COPY hooks/hooks.sh service/lib/hooks.sh" in dockerfile
-
-    def test_hook_init_creates_hook_dirs(self):
-        config = _make_config(use_hook_init=True)
-        dockerfile = generate_dockerfile(config)
-        assert "hooks/pre-configure.d" in dockerfile
-        assert "hooks/startup.d" in dockerfile
-        assert "hooks/shutdown.d" in dockerfile
-
-    def test_hook_init_changes_entrypoint(self):
-        config = _make_config(use_hook_init=True)
-        dockerfile = generate_dockerfile(config)
-        assert 'ENTRYPOINT ["service/bin/entrypoint.sh"]' in dockerfile
-        assert 'ENTRYPOINT ["service/bin/init.sh", "start"]' not in dockerfile
-
-    def test_default_entrypoint_without_hooks(self):
-        config = _make_config(use_hook_init=False)
-        dockerfile = generate_dockerfile(config)
-        assert 'ENTRYPOINT ["service/bin/init.sh", "start"]' in dockerfile
-
-
-# =============================================================================
-# Port Exposure
-# =============================================================================
-
-
-class TestDockerfileExpose:
-    """Test EXPOSE directive generation."""
-
-    def test_no_expose_by_default(self):
-        config = _make_config()
-        dockerfile = generate_dockerfile(config)
-        assert "EXPOSE" not in dockerfile
-
-    def test_single_port(self):
-        config = _make_config(expose_ports=(8080,))
-        dockerfile = generate_dockerfile(config)
-        assert "EXPOSE 8080" in dockerfile
-
-    def test_multiple_ports(self):
-        config = _make_config(expose_ports=(8080, 8443, 9090))
-        dockerfile = generate_dockerfile(config)
-        assert "EXPOSE 8080" in dockerfile
-        assert "EXPOSE 8443" in dockerfile
-        assert "EXPOSE 9090" in dockerfile
-
-
-# =============================================================================
-# Full Integration
-# =============================================================================
-
-
-class TestDockerfileIntegration:
-    """Test complete Dockerfile generation scenarios."""
-
-    def test_minimal_service(self):
-        """Minimal service with no health check, no hooks."""
-        config = _make_config()
-        dockerfile = generate_dockerfile(config)
-
-        # Must have FROM, ADD, WORKDIR, ENTRYPOINT
-        assert "FROM python:3.11-slim" in dockerfile
-        assert "ADD my-service-1.0.0.sls.tgz" in dockerfile
-        assert "WORKDIR /opt/services/my-service-1.0.0" in dockerfile
-        assert "ENTRYPOINT" in dockerfile
-
-        # Must NOT have HEALTHCHECK, EXPOSE, hooks
-        assert "HEALTHCHECK" not in dockerfile
-        assert "EXPOSE" not in dockerfile
-        assert "hooks.sh" not in dockerfile
-
-    def test_full_production_service(self):
-        """Full production service with all features."""
-        config = DockerConfig(
-            base_image="python:3.11-slim",
-            product_name="api-gateway",
-            product_version="2.5.0",
-            product_group="com.example.platform",
-            dist_name="api-gateway-2.5.0",
-            tarball_name="api-gateway-2.5.0.sls.tgz",
-            install_path="/opt/services",
-            product_type="helm.v1",
-            health_check=HealthCheckConfig(
-                interval_seconds=15,
-                timeout_seconds=10,
-                start_period_seconds=45,
-            ),
-            use_hook_init=True,
-            expose_ports=(8080, 8443),
-            labels={"team": "platform", "tier": "frontend"},
-            registry="registry.example.io",
+    def test_multi_stage(self):
+        df = (
+            DockerfileBuilder()
+            .from_("python:3.11", alias="builder")
+            .run("pip install --target=/deps -r requirements.txt")
+            .from_("python:3.11-slim")
+            .copy("/deps", "/usr/local/lib/", from_stage="builder")
+            .entrypoint("python", "-m", "myapp")
+            .build()
         )
+        result = df.render()
+        assert "FROM python:3.11 AS builder" in result
+        assert "FROM python:3.11-slim" in result
+        assert "COPY --from=builder /deps /usr/local/lib/" in result
 
-        dockerfile = generate_dockerfile(config)
-
-        # All sections present
-        assert "FROM python:3.11-slim" in dockerfile
-        assert "LABEL" in dockerfile
-        assert 'team="platform"' in dockerfile
-        assert "ADD api-gateway-2.5.0.sls.tgz /opt/services/" in dockerfile
-        assert "WORKDIR /opt/services/api-gateway-2.5.0" in dockerfile
-        assert "entrypoint.sh" in dockerfile
-        assert "hooks.sh" in dockerfile
-        assert "EXPOSE 8080" in dockerfile
-        assert "EXPOSE 8443" in dockerfile
-        assert "HEALTHCHECK" in dockerfile
-        assert "--interval=15s" in dockerfile
-        assert 'ENTRYPOINT ["service/bin/entrypoint.sh"]' in dockerfile
-
-    def test_image_tag_in_output(self):
-        """Verify the image tag is correctly formed."""
-        config = DockerConfig(
-            base_image="python:3.11-slim",
-            product_name="my-api",
-            product_version="3.0.0-rc1",
-            product_group="com.example",
-            dist_name="my-api-3.0.0-rc1",
-            tarball_name="my-api-3.0.0-rc1.sls.tgz",
-            registry="ghcr.io/myorg",
+    def test_all_directives(self):
+        df = (
+            DockerfileBuilder()
+            .from_("ubuntu:22.04", platform="linux/amd64")
+            .arg("VERSION")
+            .env("APP_ENV", "production")
+            .label({"maintainer": "team"})
+            .user("nobody", "nogroup")
+            .workdir("/app")
+            .add("archive.tar.gz", "/opt/")
+            .copy("src/", "/app/src/")
+            .run("apt-get update")
+            .expose(8080)
+            .expose(53, "udp")
+            .volume("/data")
+            .shell("/bin/bash", "-c")
+            .healthcheck("curl -f http://localhost/")
+            .entrypoint("python")
+            .cmd("-m", "app")
+            .build()
         )
-        assert config.image_tag == "ghcr.io/myorg/my-api:3.0.0-rc1"
+        result = df.render()
+        assert "FROM --platform=linux/amd64 ubuntu:22.04" in result
+        assert "ARG VERSION" in result
+        assert 'ENV APP_ENV="production"' in result
+        assert 'maintainer="team"' in result
+        assert "USER nobody:nogroup" in result
+        assert "WORKDIR /app" in result
+        assert "ADD archive.tar.gz /opt/" in result
+        assert "COPY src/ /app/src/" in result
+        assert "RUN apt-get update" in result
+        assert "EXPOSE 8080" in result
+        assert "EXPOSE 53/udp" in result
+        assert "VOLUME /data" in result
+        assert 'SHELL ["/bin/bash", "-c"]' in result
+        assert "HEALTHCHECK" in result
+        assert 'ENTRYPOINT ["python"]' in result
+        assert 'CMD ["-m", "app"]' in result
 
+    def test_blank_and_comment(self):
+        df = (
+            DockerfileBuilder()
+            .from_("alpine")
+            .comment("Install packages")
+            .run("apk add curl")
+            .blank()
+            .run("apk add git")
+            .build()
+        )
+        result = df.render()
+        assert "# Install packages" in result
+        lines = result.split("\n")
+        # Find the blank line
+        blank_indices = [i for i, l in enumerate(lines) if l == ""]
+        assert len(blank_indices) >= 1
 
-# =============================================================================
-# Dockerignore
-# =============================================================================
+    def test_healthcheck_none(self):
+        df = (
+            DockerfileBuilder()
+            .from_("alpine")
+            .healthcheck_none()
+            .build()
+        )
+        assert "HEALTHCHECK NONE" in df.render()
 
+    def test_directive_method(self):
+        df = (
+            DockerfileBuilder()
+            .from_("alpine")
+            .directive(Run(command="echo custom"))
+            .build()
+        )
+        assert "RUN echo custom" in df.render()
 
-class TestGenerateDockerignore:
-    """Test .dockerignore generation."""
+    def test_build_no_stages_raises(self):
+        with pytest.raises(ValueError, match="at least one FROM"):
+            DockerfileBuilder().build()
 
-    def test_ignores_everything_except_tarball(self):
-        content = generate_dockerignore()
-        assert "**" in content
-        assert "!*.sls.tgz" in content
-
-    def test_allows_hooks_directory(self):
-        content = generate_dockerignore()
-        assert "!hooks/" in content
+    def test_three_stages(self):
+        df = (
+            DockerfileBuilder()
+            .from_("node:18", alias="frontend")
+            .run("npm build")
+            .from_("python:3.11", alias="backend")
+            .run("pip install .")
+            .from_("nginx:alpine")
+            .copy("/frontend/dist", "/usr/share/nginx/html", from_stage="frontend")
+            .build()
+        )
+        assert len(df.stages) == 3
+        assert df.stages[0].alias == "frontend"
+        assert df.stages[1].alias == "backend"
+        assert df.stages[2].alias is None
